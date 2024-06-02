@@ -17,17 +17,20 @@ def cutout(obj: MatLike):
     return obj[y1:y2+2,x1:x2+2]
 
 def Hu(obj: MatLike, txt=""):
-    obj = cutout(obj)
-    obj = cv2.resize(obj, (50, 50))
-    moments = cv2.moments(obj, binaryImage=True)
+    # obj = cv2.threshold(obj, 128)
+    # obj = cv2.Laplacian(obj, cv2.CV_8U)
+    # obj = cutout(obj)
+    # obj = cv2.resize(obj, (50, 50))
+    # cv2.imshow(txt, obj)
+    # cv2.waitKey(0)
+    moments = cv2.moments(obj)
     huMoments = cv2.HuMoments(moments)
-    cv2.imshow(txt, obj)
     return huMoments
 
 
 def findHuMoments(obj: MatLike, name=""):
     obj = cutout(obj)
-    obj = cv2.resize(obj, (50, 50))
+    # obj = cv2.resize(obj, (50, 50))
     # obj = cv2.Laplacian(obj, cv2.CV_8U)
     # cv2.imshow(f"{name}", obj)
     # cv2.waitKey(0)

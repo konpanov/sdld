@@ -1,14 +1,16 @@
 import cv2
 from cv2.typing import MatLike
 import numpy as np
+from numpy.typing import ArrayLike
 
-from utils import find_roi, gauss
+from analiza import findHuMoments
+from utils import find_roi, smooth, grey_scale
 
 
 def progowanie(img:MatLike, bottom = 0, top = 255):
     return np.array(255 * np.logical_and(img >= np.intp(bottom), img <= np.intp(top)),dtype=np.uint8)
 
-def progowanie_rowne(img:MatLike, value):
+def select_color(img:MatLike, value):
     return np.array(255 * (img == np.intp(value)),dtype=np.uint8)
 
 
@@ -53,17 +55,24 @@ def ccl(img: MatLike):
             counts.append(count)
     return ret, lables, counts
 
-def find_objects(img: MatLike):
-    # cv2.imshow("before", img)
-    img = gauss(img)
-    # cv2.imshow("gauss", img)
+
+class Segment:
+    id: int
+    img: MatLike
+    count: int
+    desc: ArrayLike
+
+    def __init__(self, id, img, count) -> None:
+        self.id = id
+        self.img = img
+        self.count = count
+        self.desc = findHuMoments(img)
+
+def find_segments(img: MatLike):
+    img = grey_scale(img)
+    img = smooth(img)
     img = quantize(img, 4)
-    # cv2.imshow("quant", img)
-    # img = cv2.Laplacian(img, cv2.CV_8U)
-    # cv2.imshow("laplacian", img)
     ret, mask, counts = ccl(img)
-    # cv2.imshow("cll", mask.astype(np.uint8)*20)
-    labels = [i for i in range(ret) if counts[i] > 100]
-    objs = [progowanie_rowne(mask, label+1) for label in labels]
-    return objs
+    return [Segment(i, select_color(mask, i+1), counts[i]) for i in range(ret)]
+
 

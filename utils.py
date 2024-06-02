@@ -2,6 +2,11 @@ import numpy as np
 from cv2.typing import MatLike
 import cv2
 
+def resize(img: MatLike, height: int):
+    size = img.shape[:2]
+    return cv2.resize(img, (height, height * size[0]//size[1]))
+
+
 def grey_scale(img: MatLike):
     return np.array(1 + np.sum(img, axis=2)//3, dtype=np.uint8)
 
@@ -49,14 +54,9 @@ def neighbours(x, y, diag=False):
         neigh.extend([(x-1,y-1),(x-1,y+1),(x+1, y+1),(x+1,y-1)])
     return neigh
 
-def gauss(img: MatLike):
+def smooth(img: MatLike):
     h, w = img.shape
     out = np.zeros((h-2, w-2))
-    k = np.array([
-        [1, 2, 1],
-        [2, 4, 1],
-        [1, 2, 1],
-    ])
     k = np.array([
         [1, 1, 1],
         [1, 1, 1],
