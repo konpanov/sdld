@@ -3,7 +3,6 @@ from cv2.typing import MatLike
 import numpy as np
 from numpy.typing import ArrayLike
 
-from analiza import findHuMoments
 from utils import find_roi, smooth, grey_scale
 
 
@@ -66,13 +65,15 @@ class Segment:
         self.id = id
         self.img = img
         self.count = count
-        self.desc = findHuMoments(img)
 
 def find_segments(img: MatLike):
     img = grey_scale(img)
     img = smooth(img)
+    # img = cv2.equalizeHist(img)
     img = quantize(img, 4)
+    cv2.imshow("quant", img)
     ret, mask, counts = ccl(img)
-    return [Segment(i, select_color(mask, i+1), counts[i]) for i in range(ret)]
+    w, h = img.shape[:2]
+    return [Segment(i, select_color(mask, i+1), counts[i]) for i in range(ret) if counts[i] >= w * h * 0.0001 ]
 
 

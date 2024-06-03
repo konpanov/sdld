@@ -27,10 +27,10 @@ def find_roi(img: MatLike):
     return (min(X), min(Y), max(X), max(Y))
 
 
-def draw_obj_roi(img: MatLike, obj: MatLike):
+def draw_obj_roi(img: MatLike, obj: MatLike, color = (255, 0, 0)):
     Y, X = np.nonzero(obj)
     p1, p2 = ((min(X), min(Y)), (max(X), max(Y)))
-    img = cv2.rectangle(img,p1, p2, (255, 0, 0), 5)
+    img = cv2.rectangle(img,p1, p2, color, 2)
     return img
 
 
