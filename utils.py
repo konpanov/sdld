@@ -2,10 +2,11 @@ import numpy as np
 from cv2.typing import MatLike
 import cv2
 
-def resize(img: MatLike, height: int):
-    size = img.shape[:2]
-    return cv2.resize(img, (height, height * size[0]//size[1]))
-
+def down_scale(img: MatLike, height: int):
+    w, h = img.shape[:2]
+    factor_h = h // height
+    factor_w = w // (height * w//h)
+    return img[::factor_h, ::factor_w, :].astype(np.uint8)
 
 def grey_scale(img: MatLike):
     return np.array(1 + np.sum(img, axis=2)//3, dtype=np.uint8)

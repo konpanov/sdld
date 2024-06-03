@@ -1,4 +1,3 @@
-import cv2
 from cv2.typing import MatLike
 import numpy as np
 from numpy.typing import ArrayLike
@@ -13,17 +12,10 @@ def select_color(img:MatLike, value):
     return np.array(255 * (img == np.intp(value)),dtype=np.uint8)
 
 
-def prog_erode(img:MatLike):
-    img = progowanie(img, 50, 255)
-    img = cv2.erode(img, np.ones((3, 3), np.uint8)) # TODO: Rewrite
-    return img
-
 def quantize(img:MatLike, to=4):
     div = 255//to
     img = img // div * div + div//2
     return img
-    # return np.round(np.round(img*(to/255))*(255/to));
-    # return (img // div) * div
 
 
 def ccl(img: MatLike):
@@ -39,7 +31,6 @@ def ccl(img: MatLike):
             ret += 1
             count = 1
             v = img[y][x]
-            # print(v)
             lables[y][x] = ret
             queue.append((x,y))
             while len(queue):
@@ -68,12 +59,12 @@ class Segment:
 
 def find_segments(img: MatLike):
     img = grey_scale(img)
-    img = smooth(img)
-    # img = cv2.equalizeHist(img)
     img = quantize(img, 4)
-    cv2.imshow("quant", img)
     ret, mask, counts = ccl(img)
     w, h = img.shape[:2]
-    return [Segment(i, select_color(mask, i+1), counts[i]) for i in range(ret) if counts[i] >= w * h * 0.0001 ]
+    return [Segment(i, select_color(mask, i+1), counts[i]) for i in range(ret) if pole_check(w, h, counts[i]) ]
 
 
+def pole_check(w, h, count):
+    stosunek = count/(w*h) 
+    return stosunek >= 0.0001 and stosunek < .25
