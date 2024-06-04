@@ -9,24 +9,11 @@ def down_scale(img: MatLike, height: int):
     return img[::factor_h, ::factor_w, :].astype(np.uint8)
 
 def grey_scale(img: MatLike):
-    return np.array(1 + np.sum(img, axis=2)//3, dtype=np.uint8)
-
-def histogram(img: MatLike):
-    shape = img.shape
-    if len(shape) > 2:
-        raise Exception("histogram supports only grey scale")
-    histo = np.zeros(255)
-    w, h = img.shape
-    for x in range(w):
-        for y in range(h):
-            histo[img[x][y]] += 1
-    return histo
-
+    return np.array(np.sum(img, axis=2)//3, dtype=np.uint8)
 
 def find_roi(img: MatLike):
     Y, X = np.nonzero(img)
     return (min(X), min(Y), max(X), max(Y))
-
 
 def draw_obj_roi(img: MatLike, obj: MatLike, color = (255, 0, 0)):
     Y, X = np.nonzero(obj)
@@ -69,3 +56,21 @@ def smooth(img: MatLike):
             out[y][x] = np.sum(np.multiply(roi, k))//np.sum(k)
     out = np.array(out, dtype=np.uint8)
     return out
+
+def M(obj: MatLike):
+    h, w = obj.shape[:2]
+    obj = obj.astype(np.uint32)
+    ys, xs = np.arange(h), np.arange(w)
+    xsum, ysum = np.sum(obj, axis=1), np.sum(obj, axis=0)
+    m00 = np.sum(obj)
+    m10 = np.sum(ysum * xs)
+    m01 = np.sum(xsum * ys)
+    m11 = np.sum(obj * np.outer(ys, xs))
+    m20 = np.sum(ysum * xs ** 2)
+    m02 = np.sum(xsum * ys ** 2)
+    m12 = np.sum(obj * np.outer(ys ** 2, xs))
+    m21 = np.sum(obj * np.outer(ys, xs ** 2))
+    m30 = np.sum(ysum * xs ** 3)
+    m03 = np.sum(xsum * ys ** 3)
+    return m00, m10, m01, m11, m20, m02, m12, m21, m30, m03
+
