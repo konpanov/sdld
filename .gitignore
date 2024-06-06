@@ -6,4 +6,3 @@ luki/
 out/*
 !out/.gitkeep
 segments/
-images/
