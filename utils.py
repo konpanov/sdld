@@ -1,4 +1,5 @@
 import itertools
+import os
 import pickle
 import sys
 from typing import List
@@ -9,24 +10,7 @@ import numpy as np
 from cv2.typing import MatLike
 from numpy.typing import ArrayLike
 
-
 eps = sys.float_info.epsilon
-
-
-class Segment:
-    id: int
-    img: MatLike
-    count: int
-    roi: Tuple[int, int, int, int]
-    m: dict
-    desc: ArrayLike
-
-    def __init__(self, id, img, count, roi, moments) -> None:
-        self.id = id
-        self.img = img
-        self.count = count
-        self.roi = roi
-        self.m = moments
 
 
 def downsample(img: MatLike):
@@ -37,23 +21,73 @@ def downsample(img: MatLike):
     return img
 
 
-def smooth(img: MatLike):
-    h, w = img.shape
-    out = np.zeros((h - 2, w - 2))
-    k = np.ones((3, 3))
-    out = itertools.product(range(h - 2), range(w - 2))
-    out = np.multiply([img[y : y + 3, x : x + 3] for y, x in out], k)
-    out = np.sum(out, axis=(1, 2)) / np.sum(k)
-    return out.astype(np.uint8).reshape(h - 2, w - 2)
+def find_segments(img: MatLike):
+    img = median_cut(img.copy(), 10)
+    img = grey_scale(img)
+    img = quant(img, 4)
+    mask, counts, rois, ms = ccl(img)
+    recolor_mask(len(counts), mask)
+    w, h = img.shape[:2]
+    segments = [
+        Segment(i, select_color(mask, i), counts[i], rois[i], ms[i])
+        for i in range(len(counts))
+        if pole_check(w, h, counts[i])
+    ]
+    return segments
+
+
+def median_cut(img: MatLike, num_colors):
+
+    def step(colors, yx, depth):
+        if len(colors) == 0:
+            return
+
+        y = yx[:, 0]
+        x = yx[:, 1]
+
+        if depth == 0:
+            img[y, x] = np.mean(colors, axis=0)
+            return
+
+        ranges = np.max(colors, axis=0) - np.min(colors, axis=0)
+        poses = colors[:, ranges.argmax()].argsort()
+        colors = colors[poses]
+        yx = yx[poses]
+        median = len(colors) // 2
+        step(colors[:median], yx[:median], depth - 1)
+        step(colors[median:], yx[median:], depth - 1)
+
+    h, w = img.shape[:2]
+    yx = np.array(list(itertools.product(range(h), range(w))))
+    color = img.reshape(-1, 3)
+    step(color, yx, num_colors)
+    return img
 
 
 def grey_scale(img: MatLike):
     return np.array(np.sum(img, axis=2) // 3, dtype=np.uint8)
 
 
-def find_roi(img: MatLike):
-    Y, X = np.nonzero(img)
-    return (min(X), min(Y), max(X), max(Y))
+def quant(img: MatLike, to: int):
+    img = np.floor(img.astype(np.float16) * (to / 255)) * (255 // to)
+    img = img.astype(np.uint8)
+    return img
+
+
+class Segment:
+    id: int
+    img: MatLike
+    count: int
+    roi: Tuple[int, int, int, int]
+    m: np.ndarray
+    desc: ArrayLike
+
+    def __init__(self, id, img, count, roi, moments) -> None:
+        self.id = id
+        self.img = img
+        self.count = count
+        self.roi = roi
+        self.m = moments
 
 
 def draw_obj_roi(img: MatLike, obj: Segment, color=(255, 0, 0)):
@@ -66,29 +100,6 @@ def draw_obj_roi(img: MatLike, obj: Segment, color=(255, 0, 0)):
             if (y == y1 or y == y2) and x >= x1 and x <= x2:
                 img[y, x] = color
     return img
-
-
-def srodek(img: MatLike):
-    Y, X = np.nonzero(img)
-    return (int(np.mean(X)), int(np.mean(Y)))
-
-
-def odleglosc(vec1, vec2):
-    vec1 = np.array(vec1)
-    vec2 = np.array(vec2)
-    return np.sqrt(((vec1 - vec2) ** 2).sum())
-
-
-def neighbours(x, y, diag=False):
-    neigh = [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)]
-    if diag:
-        neigh.extend([(x - 1, y - 1), (x - 1, y + 1), (x + 1, y + 1), (x + 1, y - 1)])
-    return neigh
-
-
-def cutout(obj: MatLike):
-    x1, y1, x2, y2 = find_roi(obj)
-    return obj[y1 : y2 + 2, x1 : x2 + 2]
 
 
 def M(obj: MatLike):
@@ -114,10 +125,10 @@ def is_logo(dot: Segment, arc: Segment):
     good_proportion = proportion < 1.5 and proportion > 0.5
     if not good_proportion:
         return False
-    m00, m10, m01, *_ = dot.m["m00"], dot.m["m10"], dot.m["m01"]
+    m00, m10, m01 = dot.m[:3]
     dotcX = m10 / m00
     dotcY = m01 / m00
-    m00, m10, m01, *_ = arc.m["m00"], arc.m["m10"], arc.m["m01"]
+    m00, m10, m01 = arc.m[:3]
     arccX = m10 / m00
     arccY = m01 / m00
 
@@ -127,6 +138,12 @@ def is_logo(dot: Segment, arc: Segment):
 
     d = np.sqrt(dot.count) / odleg
     return d > 0.5 and d < 2.5
+
+
+def odleglosc(vec1, vec2):
+    vec1 = np.array(vec1)
+    vec2 = np.array(vec2)
+    return np.sqrt(((vec1 - vec2) ** 2).sum())
 
 
 def Hu(moments):
@@ -172,59 +189,26 @@ def Hu(moments):
     return hu
 
 
-def get_dots_pattern():
-    r = 100
-    img = np.zeros((r * 2, r * 2))
-    for x in range(r * 2):
-        for y in range(r * 2):
-            if (x - r) ** 2 + (y - r) ** 2 < r**2:
-                img[y, x] = 255
-
-    hu = Hu(M(img))
-    return [hu]
-
-
-dots_pattern = get_dots_pattern()
-
-
-def rotation(theta):
-    return np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
-
-
-def get_arcs_pattern():
-    with open("arcs_hus.p", "br") as f:
-        return pickle.load(f)
-
-arcs_pattern = get_arcs_pattern()
+def load_hus_from_dir(dir):
+    fnames = [os.path.join(dir, fname) for fname in os.listdir(dir)]
+    imgs = [cv2.imread(fname) for fname in fnames]
+    return [Hu(img) for img in imgs]
 
 
 def rate_arcs(segments: List[Segment]):
-    patterns = arcs_pattern
+    patterns = load_hus_from_dir("arcs")
     return [np.mean([match_shapes(seg, pat) for pat in patterns]) for seg in segments]
 
 
 def rate_dots(segments: List[Segment]):
-    patterns = dots_pattern
+    patterns = load_hus_from_dir("dots")
     return [
         np.min([match_shapes(seg, pat) for pat in patterns], axis=0) for seg in segments
     ]
 
 
 def match_shapes(seg: Segment, pattern_hu):
-    huA = Hu(
-        [
-            seg.m["m00"],
-            seg.m["m10"],
-            seg.m["m01"],
-            seg.m["m11"],
-            seg.m["m20"],
-            seg.m["m02"],
-            seg.m["m12"],
-            seg.m["m21"],
-            seg.m["m30"],
-            seg.m["m03"],
-        ]
-    )
+    huA = Hu(seg.m)
     huB = pattern_hu
     eps = 1.0e-5
     nonzero = np.logical_and(np.abs(huA) > eps, np.abs(huB) > eps)
@@ -235,21 +219,8 @@ def match_shapes(seg: Segment, pattern_hu):
     return np.sum(np.abs(mA - mB))
 
 
-def progowanie(img: MatLike, bottom=0, top=255):
-    return np.array(
-        255 * np.logical_and(img >= np.intp(bottom), img <= np.intp(top)),
-        dtype=np.uint8,
-    )
-
-
 def select_color(img: MatLike, value):
     return 255 * (img == np.intp(value))
-
-
-def quantize(img: MatLike, to=4):
-    div = 255 // to
-    img = img // div * div + div // 2
-    return img
 
 
 def ccl_firstpass(img: MatLike):
@@ -259,8 +230,8 @@ def ccl_firstpass(img: MatLike):
     ret = 0
     for y in range(h):
         for x in range(w):
-            left = x != 0 and (img[y, x] == img[y, x - 1])
-            top = y != 0 and (img[y, x] == img[y - 1, x])
+            left = x != 0 and (img[y, x] == img[y, x - 1]).all()
+            top = y != 0 and (img[y, x] == img[y - 1, x]).all()
             if left and top:
                 leftl = labels[y, x - 1]
                 topl = labels[y - 1, x]
@@ -284,52 +255,45 @@ def ccl_firstpass(img: MatLike):
 def ccl_second_pass(labels, roots):
     h, w = labels.shape[:2]
     relabel = []
-    counts = []
-    rois = []
-    ms = []
     ret = 0
     for i, root in enumerate(roots):
         if root == i:
             relabel.append(ret)
-            counts.append(0)
-            ms.append(
-                {
-                    "m00": 0,
-                    "m10": 0,
-                    "m01": 0,
-                    "m11": 0,
-                    "m20": 0,
-                    "m02": 0,
-                    "m12": 0,
-                    "m21": 0,
-                    "m30": 0,
-                    "m03": 0,
-                }
-            )
-            rois.append([w, 0, h, 0])
             ret += 1
         else:
             roots[i] = roots[root]
             relabel.append(relabel[roots[i]])
+    ms = np.zeros((ret, 10))
+    counts = np.zeros(ret)
+    rois = [[w, 0, h, 0] for _ in range(ret)]
+
+    def calc_m(m, x, y):
+        m[0] += 255  # m00
+        m[1] += 255 * x  # m10
+        m[2] += 255 * y  # m01
+        m[3] += 255 * x * y  # m11
+        m[4] += 255 * x * x  # m20
+        m[5] += 255 * y * y  # m02
+        m[6] += 255 * y * y * x  # m12
+        m[7] += 255 * x * x * y  # m21
+        m[8] += 255 * x * x * x  # m30
+        m[9] += 255 * y * y * y  # m03
+
     for y in range(h):
         for x in range(w):
             label = relabel[labels[y, x]]
             labels[y, x] = label
             counts[label] += 1
+    for y in range(h):
+        for x in range(w):
+            label = labels[y, x]
+            if not pole_check(w, h, counts[label]):
+                continue
             rois[label][0] = min(rois[label][0], x)
             rois[label][1] = max(rois[label][1], x)
             rois[label][2] = min(rois[label][2], y)
             rois[label][3] = max(rois[label][3], y)
-            ms[label]["m00"] += 255
-            ms[label]["m10"] += 255 * x
-            ms[label]["m01"] += 255 * y
-            ms[label]["m11"] += 255 * x * y
-            ms[label]["m20"] += 255 * x * x
-            ms[label]["m02"] += 255 * y * y
-            ms[label]["m12"] += 255 * y * y * x
-            ms[label]["m21"] += 255 * x * x * y
-            ms[label]["m30"] += 255 * x * x * x
-            ms[label]["m03"] += 255 * y * y * y
+            calc_m(ms[label], x, y)
     return labels, counts, rois, ms
 
 
