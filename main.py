@@ -1,3 +1,4 @@
+import argparse
 import os
 from itertools import product
 
@@ -11,13 +12,22 @@ from utils import rate_arcs
 from utils import rate_dots
 
 
+parser = argparse.ArgumentParser()
+boolopt = argparse.BooleanOptionalAction
+parser.add_argument("-o", "--output", help="Save output", action=boolopt)
+parser.add_argument("-r", "--remap", help="Show remapped colors", action=boolopt)
+parser.add_argument("-p", "--pause", help="Pause between images", action=boolopt)
+parser.add_argument("-q", "--quit", help="Quit after last image", action=boolopt)
+args = parser.parse_args()
+
+
 if __name__ == "__main__":
     dir = "images"
-    for i, infile in enumerate(os.listdir(dir)):
-        infile = os.path.join(dir, infile)
-        img = cv2.imread(infile)
+    for i, fname in enumerate(os.listdir(dir)):
+        dirfname = os.path.join(dir, fname)
+        img = cv2.imread(dirfname)
         img = downsample(img)
-        segments = find_segments(img)
+        segments = find_segments(img, args.remap)
         dots = zip(rate_dots(segments), segments)
         arcs = zip(rate_arcs(segments), segments)
         dots = sorted(dots, key=lambda x: x[0])
@@ -35,6 +45,9 @@ if __name__ == "__main__":
                 img = draw_obj_roi(img, dot[1], color=(255, 0, 0))
                 img = draw_obj_roi(img, arc[1], color=(255, 0, 0))
 
-        cv2.imshow(f"{i}/{d:.5f}/{a:.5f}", img)
-        cv2.waitKey(1)
-    cv2.waitKey(0)
+        if args.output:
+            cv2.imwrite(os.path.join("out", fname), img)
+        cv2.imshow(f"{i}", img)
+        cv2.waitKey(0 if args.pause else 1)
+    if not args.quit:
+        cv2.waitKey(0)

@@ -3,5 +3,7 @@ venv/
 test/
 train/
 luki/
+out/*
+!out/.gitkeep
 segments/
 images/

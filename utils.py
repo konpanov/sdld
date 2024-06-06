@@ -21,12 +21,13 @@ def downsample(img: MatLike):
     return img
 
 
-def find_segments(img: MatLike):
+def find_segments(img: MatLike, show_remap: bool):
     img = median_cut(img.copy(), 10)
     img = grey_scale(img)
     img = quant(img, 4)
     mask, counts, rois, ms = ccl(img)
-    recolor_mask(len(counts), mask)
+    if show_remap:
+        recolor_mask(len(counts), mask)
     w, h = img.shape[:2]
     segments = [
         Segment(i, select_color(mask, i), counts[i], rois[i], ms[i])
@@ -191,8 +192,8 @@ def Hu(moments):
 
 def load_hus_from_dir(dir):
     fnames = [os.path.join(dir, fname) for fname in os.listdir(dir)]
-    imgs = [cv2.imread(fname) for fname in fnames]
-    return [Hu(img) for img in imgs]
+    imgs = [cv2.imread(fname, cv2.IMREAD_GRAYSCALE) for fname in fnames]
+    return [Hu(M(img)) for img in imgs]
 
 
 def rate_arcs(segments: List[Segment]):
@@ -230,8 +231,8 @@ def ccl_firstpass(img: MatLike):
     ret = 0
     for y in range(h):
         for x in range(w):
-            left = x != 0 and (img[y, x] == img[y, x - 1]).all()
-            top = y != 0 and (img[y, x] == img[y - 1, x]).all()
+            left = x != 0 and img[y, x] == img[y, x - 1]
+            top = y != 0 and img[y, x] == img[y - 1, x]
             if left and top:
                 leftl = labels[y, x - 1]
                 topl = labels[y - 1, x]
